@@ -1,0 +1,548 @@
+---
+title: "The LASSO: A Practical Guide for Psychology Research"
+author: "Statistical Consulting Resource"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    toc_depth: 3
+    number_sections: true
+    code_folding: show
+    highlight: tango
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 9,
+  fig.height = 6,
+  fig.align = "center"
+)
+```
+
+---
+
+# Introduction {.tabset}
+
+## What is LASSO?
+
+**LASSO** stands for **Least Absolute Shrinkage and Selection Operator**. It is a regularized regression technique that simultaneously performs:
+
+1. **Coefficient estimation** — fitting a regression model to your data
+2. **Variable selection** — automatically shrinking some coefficients to exactly zero, effectively removing irrelevant predictors
+
+LASSO was introduced by [Robert Tibshirani (1996)](https://doi.org/10.1111/j.2517-6161.1996.tb02080.x) and has since become one of the most widely used methods in modern statistics and machine learning.
+
+## The Core Idea
+
+In **Ordinary Least Squares (OLS)**, we minimize the residual sum of squares:
+
+$$\text{Minimize: } \sum_{i=1}^{n}(y_i - \beta_0 - \sum_{j=1}^{p}\beta_j x_{ij})^2$$
+
+**LASSO** adds a penalty term — the sum of the absolute values of the coefficients, multiplied by a tuning parameter $\lambda$:
+
+$$\text{Minimize: } \sum_{i=1}^{n}(y_i - \beta_0 - \sum_{j=1}^{p}\beta_j x_{ij})^2 + \lambda \sum_{j=1}^{p}|\beta_j|$$
+
+- When $\lambda = 0$: You get standard OLS
+- As $\lambda \to \infty$: All coefficients are shrunk to zero
+- The optimal $\lambda$ is chosen via **cross-validation**
+
+---
+
+# Comparison with Other Methods
+
+## Overview Table
+
+| Feature                  | OLS / MLE        | Ridge Regression   | LASSO             | Elastic Net       |
+|--------------------------|------------------|--------------------|-------------------|--------------------|
+| **Penalty**              | None             | L2 ($\sum \beta_j^2$) | L1 ($\sum |\beta_j|$) | L1 + L2 combined  |
+| **Variable Selection**   | No               | No                 | Yes               | Yes                |
+| **Handles Multicollinearity** | Poorly     | Well               | Moderately        | Well               |
+| **Bias**                 | Unbiased         | Biased             | Biased            | Biased             |
+| **Variance**             | Can be high      | Lower              | Lower             | Lower              |
+| **Best When**            | $n \gg p$, few predictors | Correlated predictors | Sparse models | Correlated + sparse |
+
+## OLS / Maximum Likelihood Estimation
+
+- Produces **unbiased** estimates under classical assumptions (normality, homoscedasticity, independence)
+- Never sets a coefficient to zero — all predictors remain in the model
+- Tends to **overfit** when the number of predictors is large relative to the sample size
+- Low bias, but can have **high variance**
+
+## Ridge Regression (L2 Penalty)
+
+- Adds a penalty on the **squared** coefficients: $\lambda \sum \beta_j^2$
+- Shrinks coefficients toward zero but **never exactly to zero**
+- Handles **multicollinearity** well
+- Does **not** perform variable selection
+
+## LASSO (L1 Penalty)
+
+- Adds a penalty on the **absolute** coefficients: $\lambda \sum |\beta_j|$
+- Can shrink coefficients **exactly to zero** → automatic variable selection
+- Introduces **bias** in exchange for reduced **variance** (the bias-variance tradeoff)
+- May struggle with groups of highly correlated predictors (arbitrarily picks one)
+
+## Elastic Net (L1 + L2 Combined)
+
+- Combines both penalties: $\lambda_1 \sum |\beta_j| + \lambda_2 \sum \beta_j^2$
+- Gets the **variable selection** of LASSO with the **grouping effect** of Ridge
+- Particularly useful in psychology where predictor variables are often correlated (e.g., subscales of related constructs)
+
+```{r penalty-visualization, fig.cap="Visualization of L1 (LASSO) vs L2 (Ridge) constraint regions"}
+library(ggplot2)
+library(gridExtra)
+
+# Create constraint region plots
+theta <- seq(0, 2 * pi, length.out = 300)
+
+# L1 (LASSO) - Diamond
+l1_x <- cos(theta)
+l1_y <- sin(theta)
+l1_r <- 1 / (abs(cos(theta)) + abs(sin(theta)))
+l1_df <- data.frame(x = l1_r * cos(theta), y = l1_r * sin(theta))
+
+# L2 (Ridge) - Circle
+l2_df <- data.frame(x = cos(theta), y = sin(theta))
+
+p1 <- ggplot(l1_df, aes(x, y)) +
+  geom_polygon(fill = "#3498db", alpha = 0.3, color = "#2c3e50", linewidth = 1) +
+  geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.3) +
+  geom_vline(xintercept = 0, linetype = "dashed", alpha = 0.3) +
+  coord_fixed() +
+  labs(title = "L1 Constraint (LASSO)", x = expression(beta[1]), y = expression(beta[2])) +
+  theme_minimal(base_size = 14) +
+  annotate("text", x = 0.5, y = -0.8, label = "Corners touch axes\n→ coefficients = 0",
+           size = 3.5, color = "#2c3e50")
+
+p2 <- ggplot(l2_df, aes(x, y)) +
+  geom_polygon(fill = "#e74c3c", alpha = 0.3, color = "#2c3e50", linewidth = 1) +
+  geom_hline(yintercept = 0, linetype = "dashed", alpha = 0.3) +
+  geom_vline(xintercept = 0, linetype = "dashed", alpha = 0.3) +
+  coord_fixed() +
+  labs(title = "L2 Constraint (Ridge)", x = expression(beta[1]), y = expression(beta[2])) +
+  theme_minimal(base_size = 14) +
+  annotate("text", x = 0.5, y = -0.8, label = "Smooth boundary\n→ coefficients shrink but ≠ 0",
+           size = 3.5, color = "#2c3e50")
+
+grid.arrange(p1, p2, ncol = 2)
+```
+
+> **Why does LASSO set coefficients to zero but Ridge doesn't?** The diamond shape of the L1 constraint region has corners that sit on the axes. When the OLS solution's contour lines intersect this diamond, they're most likely to hit a corner — where one or more coefficients are exactly zero.
+
+---
+
+# When to Use LASSO in Psychology Research
+
+## Ideal Scenarios
+
+### Many Candidate Predictors
+You've measured 25 personality facets, 10 demographic variables, and 8 cognitive measures, and you want to predict therapy outcomes. Rather than running stepwise regression (which has well-documented problems with inflated Type I error and unstable selection), LASSO provides a principled, regularized approach.
+
+### Modest Sample Size Relative to Predictors
+Psychology studies often have $n = 100$–$300$ with dozens of measured variables. OLS breaks down when the observation-to-predictor ratio gets small. LASSO remains well-behaved even when $p$ approaches or exceeds $n$.
+
+### Prediction Over Inference
+If your goal is to build a screening instrument, a risk prediction model, or a classification tool, LASSO is a strong choice. It optimizes for **out-of-sample prediction**, not in-sample fit.
+
+### Suspected Sparsity
+LASSO embodies a **sparsity assumption** — the idea that only a subset of measured variables truly matter. This is often reasonable in exploratory psychological research.
+
+## Common Applications in Psychology
+
+- Building **predictive models** for clinical outcomes
+- Identifying which **items or subscales** from large batteries are most informative
+- **Variable selection** in neuroimaging (thousands of voxels/ROIs)
+- Constructing **short-form measures** from longer instruments
+- **Risk assessment** tools in clinical settings
+
+## Important Caveats
+
+> **LASSO coefficients are biased**, and standard errors don't follow the usual distributions. You **cannot** simply interpret LASSO output the way you would OLS output. Do not report LASSO coefficients with traditional p-values or confidence intervals without additional steps.
+
+---
+
+# Applying LASSO in R {.tabset}
+
+## Setup
+
+```{r load-packages}
+# Install packages if needed (uncomment the lines below)
+# install.packages("glmnet")
+# install.packages("caret")
+# install.packages("psych")
+
+library(glmnet)   # Core LASSO implementation
+library(caret)    # For data splitting and preprocessing
+library(psych)    # For simulating psychology-like data
+library(ggplot2)  # For plotting
+```
+
+## Simulating Psychology Data
+
+For this demonstration, we'll simulate a dataset resembling a psychology study: predicting therapy outcome from personality traits, cognitive measures, and demographic variables.
+
+```{r simulate-data}
+set.seed(42)
+n <- 200  # Sample size (typical for psychology)
+p <- 20   # Number of predictors
+
+# Simulate correlated predictors (common in psychology)
+Sigma <- matrix(0.3, nrow = p, ncol = p)
+diag(Sigma) <- 1
+X <- MASS::mvrnorm(n, mu = rep(0, p), Sigma = Sigma)
+
+# Name the predictors
+colnames(X) <- c(
+  paste0("Personality_", 1:8),
+  paste0("Cognitive_", 1:6),
+  paste0("Demographic_", 1:4),
+  "Social_Support",
+  "Treatment_Adherence"
+)
+
+# True model: only 5 of 20 predictors actually matter
+true_betas <- c(1.5, -0.8, 0, 0, 0.6, 0, 0, 0,   # Personality
+                1.2, 0, 0, 0, -0.9, 0,              # Cognitive
+                0, 0, 0, 0,                           # Demographic
+                0, 0)                                 # Social/Adherence
+
+# Generate outcome (therapy improvement score)
+y <- X %*% true_betas + rnorm(n, sd = 2)
+
+# Combine into a data frame
+df <- data.frame(Therapy_Outcome = y, X)
+
+cat("Dataset dimensions:", dim(df), "\n")
+cat("True non-zero predictors:", sum(true_betas != 0), "out of", p, "\n")
+```
+
+## Preparing the Data
+
+```{r data-prep}
+# glmnet requires a matrix of predictors and a response vector
+# Split into training (70%) and test (30%) sets
+set.seed(123)
+train_idx <- sample(1:n, size = 0.7 * n)
+test_idx  <- setdiff(1:n, train_idx)
+
+x_train <- X[train_idx, ]
+y_train <- y[train_idx]
+x_test  <- X[test_idx, ]
+y_test  <- y[test_idx]
+
+cat("Training set:", nrow(x_train), "observations\n")
+cat("Test set:    ", nrow(x_test), "observations\n")
+```
+
+## Fitting LASSO with Cross-Validation
+
+```{r fit-lasso}
+set.seed(123)  # Important: CV folds are random
+cv_fit <- cv.glmnet(
+  x      = x_train,
+  y      = y_train,
+  alpha  = 1,       # alpha = 1 → LASSO; alpha = 0 → Ridge
+  nfolds = 10       # 10-fold cross-validation
+)
+
+# Plot the cross-validation curve
+plot(cv_fit, main = "LASSO Cross-Validation Curve")
+```
+
+### Understanding the CV Plot
+
+- The **left dashed line** marks `lambda.min` — the $\lambda$ that minimizes cross-validated error
+- The **right dashed line** marks `lambda.1se` — the largest $\lambda$ within 1 SE of the minimum (produces a sparser model)
+- The numbers along the top indicate how many predictors are non-zero at each $\lambda$
+
+```{r lambda-values}
+cat("lambda.min:", cv_fit$lambda.min, "\n")
+cat("lambda.1se:", cv_fit$lambda.1se, "\n")
+```
+
+## Examining the Coefficients
+
+```{r coefficients}
+# Coefficients at lambda.min (less sparse, better fit)
+coef_min <- coef(cv_fit, s = "lambda.min")
+cat("=== Coefficients at lambda.min ===\n")
+cat("Non-zero predictors:", sum(coef_min[-1] != 0), "out of", p, "\n\n")
+
+# Coefficients at lambda.1se (sparser, more parsimonious)
+coef_1se <- coef(cv_fit, s = "lambda.1se")
+cat("=== Coefficients at lambda.1se ===\n")
+cat("Non-zero predictors:", sum(coef_1se[-1] != 0), "out of", p, "\n")
+```
+
+```{r coef-comparison-plot, fig.cap="Comparison of true coefficients vs LASSO estimates"}
+# Build comparison data frame
+coef_df <- data.frame(
+  Predictor = colnames(X),
+  True = true_betas,
+  LASSO_min = as.numeric(coef_min[-1]),
+  LASSO_1se = as.numeric(coef_1se[-1])
+)
+
+# Reshape for plotting
+coef_long <- tidyr::pivot_longer(
+  coef_df,
+  cols = c(True, LASSO_min, LASSO_1se),
+  names_to = "Method",
+  values_to = "Coefficient"
+)
+coef_long$Method <- factor(coef_long$Method,
+  levels = c("True", "LASSO_min", "LASSO_1se"),
+  labels = c("True Coefficients", "LASSO (lambda.min)", "LASSO (lambda.1se)")
+)
+
+ggplot(coef_long, aes(x = reorder(Predictor, -abs(Coefficient)), y = Coefficient, fill = Method)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.7), width = 0.6) +
+  coord_flip() +
+  scale_fill_manual(values = c("#2c3e50", "#3498db", "#e74c3c")) +
+  labs(
+    title = "True vs. LASSO-Estimated Coefficients",
+    x = NULL,
+    y = "Coefficient Value"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
+```
+
+## Coefficient Path Plot
+
+```{r coef-path, fig.cap="LASSO coefficient paths as lambda increases"}
+fit_full <- glmnet(x_train, y_train, alpha = 1)
+plot(fit_full, xvar = "lambda", label = TRUE, main = "LASSO Coefficient Paths")
+abline(v = log(cv_fit$lambda.min), lty = 2, col = "blue")
+abline(v = log(cv_fit$lambda.1se), lty = 2, col = "red")
+legend("topright", legend = c("lambda.min", "lambda.1se"),
+       col = c("blue", "red"), lty = 2, cex = 0.8)
+```
+
+## Evaluating Prediction Performance
+
+```{r prediction}
+# Predictions on test set
+pred_lasso_min <- predict(cv_fit, newx = x_test, s = "lambda.min")
+pred_lasso_1se <- predict(cv_fit, newx = x_test, s = "lambda.1se")
+
+# Also fit OLS for comparison
+ols_fit <- lm(y_train ~ x_train)
+pred_ols <- cbind(1, x_test) %*% coef(ols_fit)
+
+# Calculate RMSE and R-squared
+rmse <- function(actual, predicted) sqrt(mean((actual - predicted)^2))
+rsq  <- function(actual, predicted) 1 - sum((actual - predicted)^2) / sum((actual - mean(actual))^2)
+
+results <- data.frame(
+  Method = c("OLS", "LASSO (lambda.min)", "LASSO (lambda.1se)"),
+  RMSE = c(
+    rmse(y_test, pred_ols),
+    rmse(y_test, pred_lasso_min),
+    rmse(y_test, pred_lasso_1se)
+  ),
+  R_squared = c(
+    rsq(y_test, pred_ols),
+    rsq(y_test, pred_lasso_min),
+    rsq(y_test, pred_lasso_1se)
+  ),
+  Predictors_Used = c(
+    p,
+    sum(coef_min[-1] != 0),
+    sum(coef_1se[-1] != 0)
+  )
+)
+
+knitr::kable(results, digits = 3, caption = "Prediction Performance on Test Set")
+```
+
+---
+
+# Select-Then-Refit Workflow
+
+A common workflow in psychology: use LASSO for variable selection, then refit with OLS for interpretable estimates.
+
+```{r select-refit}
+# Get selected variables at lambda.1se
+lasso_coefs <- coef(cv_fit, s = "lambda.1se")
+selected <- rownames(lasso_coefs)[which(lasso_coefs != 0)]
+selected <- selected[selected != "(Intercept)"]
+
+cat("Selected predictors:\n")
+cat(paste(" -", selected), sep = "\n")
+```
+
+```{r ols-refit}
+# Refit with OLS using only the selected predictors
+if (length(selected) > 0) {
+  df_train <- data.frame(Therapy_Outcome = y_train, x_train)
+  
+  formula_selected <- as.formula(
+    paste("Therapy_Outcome ~", paste(selected, collapse = " + "))
+  )
+  
+  ols_refit <- lm(formula_selected, data = df_train)
+  
+  cat("\n=== OLS Refit on LASSO-Selected Variables ===\n\n")
+  summary(ols_refit)
+} else {
+  cat("No predictors were selected at lambda.1se.\n")
+}
+```
+
+> **Caveat:** The p-values and confidence intervals from this refitted model are **optimistic** because the variable selection step is not accounted for. This two-step procedure does not have the same inferential guarantees as a pre-specified OLS model. For valid post-selection inference, consider packages like `selectiveInference`.
+
+---
+
+# Comparing LASSO, Ridge, and Elastic Net
+
+```{r compare-methods}
+set.seed(123)
+
+# LASSO (alpha = 1)
+cv_lasso <- cv.glmnet(x_train, y_train, alpha = 1)
+
+# Ridge (alpha = 0)
+cv_ridge <- cv.glmnet(x_train, y_train, alpha = 0)
+
+# Elastic Net (alpha = 0.5)
+cv_enet <- cv.glmnet(x_train, y_train, alpha = 0.5)
+
+# Compare
+comparison <- data.frame(
+  Method = c("LASSO (α=1)", "Elastic Net (α=0.5)", "Ridge (α=0)"),
+  Lambda_min = c(cv_lasso$lambda.min, cv_enet$lambda.min, cv_ridge$lambda.min),
+  CV_Error = c(
+    min(cv_lasso$cvm),
+    min(cv_enet$cvm),
+    min(cv_ridge$cvm)
+  ),
+  Nonzero_Coefs = c(
+    sum(coef(cv_lasso, s = "lambda.min")[-1] != 0),
+    sum(coef(cv_enet, s = "lambda.min")[-1] != 0),
+    sum(coef(cv_ridge, s = "lambda.min")[-1] != 0)
+  )
+)
+
+knitr::kable(comparison, digits = 4, caption = "Comparison of Regularization Methods")
+```
+
+```{r compare-coefs-plot, fig.cap="Coefficient estimates across methods"}
+coef_compare <- data.frame(
+  Predictor = colnames(X),
+  True = true_betas,
+  LASSO = as.numeric(coef(cv_lasso, s = "lambda.min")[-1]),
+  Ridge = as.numeric(coef(cv_ridge, s = "lambda.min")[-1]),
+  Elastic_Net = as.numeric(coef(cv_enet, s = "lambda.min")[-1])
+)
+
+coef_compare_long <- tidyr::pivot_longer(
+  coef_compare,
+  cols = c(True, LASSO, Ridge, Elastic_Net),
+  names_to = "Method",
+  values_to = "Coefficient"
+)
+
+ggplot(coef_compare_long, aes(x = reorder(Predictor, -abs(Coefficient)), y = Coefficient, fill = Method)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.7), width = 0.6) +
+  coord_flip() +
+  scale_fill_manual(values = c("#e74c3c", "#3498db", "#e67e22", "#2c3e50")) +
+  labs(
+    title = "Coefficient Estimates: LASSO vs Ridge vs Elastic Net",
+    subtitle = "Notice Ridge never sets coefficients to exactly zero",
+    x = NULL,
+    y = "Coefficient Value"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "top")
+```
+
+---
+
+# Tuning Alpha for Elastic Net
+
+When you have correlated predictors (common in psychology), tuning both $\alpha$ and $\lambda$ can improve results.
+
+```{r tune-alpha, fig.cap="CV Error across different alpha values"}
+alphas <- seq(0, 1, by = 0.1)
+cv_errors <- sapply(alphas, function(a) {
+  cv <- cv.glmnet(x_train, y_train, alpha = a)
+  min(cv$cvm)
+})
+
+alpha_df <- data.frame(Alpha = alphas, CV_Error = cv_errors)
+
+ggplot(alpha_df, aes(x = Alpha, y = CV_Error)) +
+  geom_line(color = "#2c3e50", linewidth = 1.2) +
+  geom_point(color = "#e74c3c", size = 3) +
+  geom_vline(xintercept = alphas[which.min(cv_errors)], linetype = "dashed", color = "#3498db") +
+  annotate("text",
+    x = alphas[which.min(cv_errors)] + 0.05,
+    y = max(cv_errors),
+    label = paste("Best α =", alphas[which.min(cv_errors)]),
+    hjust = 0, color = "#3498db", size = 4
+  ) +
+  labs(
+    title = "Cross-Validated Error Across Alpha Values",
+    subtitle = "α = 0 (Ridge) ←→ α = 1 (LASSO)",
+    x = "Alpha (mixing parameter)",
+    y = "Cross-Validated MSE"
+  ) +
+  theme_minimal(base_size = 14)
+```
+
+---
+
+# Practical Checklist for Psychology Researchers
+
+## Before Using LASSO
+
+- [ ] **Is your goal prediction or variable selection?** LASSO is optimized for these. For confirmatory hypothesis testing, consider pre-registered OLS.
+- [ ] **Do you have more predictors than you're comfortable including in OLS?** If yes, LASSO can help.
+- [ ] **Are your predictors correlated?** If heavily correlated, consider Elastic Net instead of pure LASSO.
+- [ ] **Is your sample size adequate?** LASSO works with smaller samples than OLS, but very small $n$ (< 50) can still be problematic.
+
+## During Analysis
+
+- [ ] **Standardize your predictors** — `glmnet` does this internally by default, but be aware of it.
+- [ ] **Set a seed** before `cv.glmnet()` for reproducibility.
+- [ ] **Consider `lambda.1se`** for a more parsimonious model (preferred for interpretation).
+- [ ] **Compare LASSO, Ridge, and Elastic Net** — report why you chose your method.
+
+## When Reporting
+
+- [ ] **Do not report LASSO coefficients with p-values** unless using post-selection inference methods.
+- [ ] **Report the CV procedure** — number of folds, which $\lambda$ was chosen, and why.
+- [ ] **Report prediction performance** — RMSE, $R^2$, on a held-out test set or via CV.
+- [ ] **List which variables were selected** and which were shrunk to zero.
+
+---
+
+# Recommended Reading
+
+- **Tibshirani, R. (1996).** Regression shrinkage and selection via the Lasso. *Journal of the Royal Statistical Society: Series B*, 58(1), 267-288.
+- **Zou, H., & Hastie, T. (2005).** Regularization and variable selection via the elastic net. *Journal of the Royal Statistical Society: Series B*, 67(2), 301-320.
+- **Hastie, T., Tibshirani, R., & Friedman, J. (2009).** *The Elements of Statistical Learning* (2nd ed.). Springer. [Free online](https://hastie.su.stanford.edu/ElemStatLearn/)
+- **McNeish, D. M. (2015).** Using Lasso for predictor selection and to assuage overfitting: A method long overlooked in behavioral sciences. *Multivariate Behavioral Research*, 50(5), 471-484.
+
+---
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```
+
+---
+
+<center>
+*Generated with R Markdown — A practical resource for psychology researchers interested in regularized regression methods.*
+</center>
