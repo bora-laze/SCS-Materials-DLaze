@@ -253,15 +253,18 @@ cv_fit <- cv.glmnet(
   nfolds = 10       # 10-fold cross-validation
 )
 
-# Plot the cross-validation curve
-plot(cv_fit, main = "LASSO Cross-Validation Curve")
+# Plot the cross-validation curve with log(lambda) on the x-axis
+# sign.lambda = 1 uses log(lambda); the default (-1) flips it to -log(lambda)
+plot(cv_fit, sign.lambda = 1, main = "LASSO Cross-Validation Curve")
 ```
 
 ### Understanding the CV Plot
 
-- The **left dashed line** marks `lambda.min` — the $\lambda$ that minimizes cross-validated error
-- The **right dashed line** marks `lambda.1se` — the largest $\lambda$ within 1 SE of the minimum (produces a sparser model)
-- The numbers along the top indicate how many predictors are non-zero at each $\lambda$
+- As you move **left** (smaller $\lambda$, less penalty), more predictors remain in the model
+- As you move **right** (larger $\lambda$, more penalty), more predictors are shrunk to zero
+- `lambda.min` (less penalty) retains **more** non-zero predictors — it minimizes CV error
+- `lambda.1se` (more penalty) retains **fewer** non-zero predictors — it gives the sparsest model within 1 SE of the minimum error
+- The numbers along the top show how many predictors are non-zero at each $\lambda$
 
 ```{r lambda-values}
 cat("lambda.min:", cv_fit$lambda.min, "\n")
@@ -320,10 +323,15 @@ ggplot(coef_long, aes(x = reorder(Predictor, -abs(Coefficient)), y = Coefficient
 
 ```{r coef-path, fig.cap="LASSO coefficient paths as lambda increases"}
 fit_full <- glmnet(x_train, y_train, alpha = 1)
-plot(fit_full, xvar = "lambda", label = TRUE, main = "LASSO Coefficient Paths")
+
+# Reverse xlim so the x-axis goes from small log(lambda) on the left
+# to large log(lambda) on the right, matching the CV plot orientation
+log_lam_range <- range(log(fit_full$lambda))
+plot(fit_full, xvar = "lambda", label = TRUE, main = "LASSO Coefficient Paths",
+     xlim = rev(log_lam_range))
 abline(v = log(cv_fit$lambda.min), lty = 2, col = "blue")
 abline(v = log(cv_fit$lambda.1se), lty = 2, col = "red")
-legend("topright", legend = c("lambda.min", "lambda.1se"),
+legend("topleft", legend = c("lambda.min", "lambda.1se"),
        col = c("blue", "red"), lty = 2, cex = 0.8)
 ```
 
